@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NASDAQ Advisor • Stock Prediction & AI Analysis</title>
+  <meta name="description" content="Single-file stock analysis, backtesting, and AI insights for NASDAQ equities." />
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@3.4.10/dist/tailwind.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root { color-scheme: light dark; }
+    html, body { height: 100%; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; }
+    .card { @apply bg-white/70 dark:bg-zinc-900/70 backdrop-blur rounded-2xl shadow-lg border border-zinc-200/60 dark:border-zinc-800; }
+    .badge { @apply text-xs px-2 py-0.5 rounded-full border border-zinc-300 dark:border-zinc-700; }
+    .btn { @apply inline-flex items-center justify-center px-3 py-2 rounded-xl font-semibold border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition; }
+    .btn-primary { @apply bg-black text-white border-black hover:bg-zinc-800; }
+    .grid-cols-fluid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+    /* Print-friendly report */
+    @media print { .no-print { display:none } .print\:block { display:block } }
+  </style>
+</head>
+<body class="bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-950 dark:to-zinc-900 text-zinc-900 dark:text-zinc-100 min-h-full">
+  <header class="no-print sticky top-0 z-50 backdrop-blur bg-white/70 dark:bg-zinc-950/70 border-b border-zinc-200/60 dark:border-zinc-800">
+    <div class="max-w-7xl mx-auto p-3 flex items-center gap-3">
+      <div class="size-9 rounded-xl bg-black text-white grid place-items-center font-bold">NA</div>
+      <div>
+        <h1 class="text-lg font-bold">NASDAQ Advisor</h1>
+        <p class="text-xs text-zinc-500">Single-file stock analysis • Backtesting • Risk • AI insights</p>
+      </div>
+      <div class="ml-auto flex gap-2">
+        <button id="btnSave" class="btn" title="Save settings to browser">Save</button>
+        <button id="btnLoad" class="btn" title="Load settings from browser">Load</button>
+        <button id="btnReport" class="btn" title="Print/Export report">Export</button>
+        <label class="btn cursor-pointer" title="Load CSV (date,open,high,low,close,volume)">
+          <input id="csvFile" type="file" accept=".csv" class="hidden" />
+          Import CSV
+        </label>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-4 space-y-4">
+    <!-- Controls -->
+    <section class="card p-4">
+      <div class="grid md:grid-cols-4 gap-3">
+        <div class="col-span-2">
+          <label class="block text-sm font-semibold mb-1">Ticker (NASDAQ)</label>
+          <div class="flex gap-2">
+            <input id="ticker" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="AAPL, MSFT, NVDA, QQQ" value="AAPL" />
+            <button id="btnFetch" class="btn-primary">Analyze</button>
+          </div>
+          <p class="text-xs text-zinc-500 mt-1">Data via adapter: Alpha Vantage (key), Yahoo (RapidAPI), or Synthetic fallback.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Date Range</label>
+          <select id="range" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+            <option value="1Y">1 Year</option>
+            <option value="3Y" selected>3 Years</option>
+            <option value="5Y">5 Years</option>
+            <option value="MAX">Max (adapter)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Capital ($)</label>
+          <input id="capital" type="number" value="3000" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+        </div>
+      </div>
+
+      <details class="mt-4">
+        <summary class="cursor-pointer text-sm font-semibold">Data Settings</summary>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
+          <div class="space-y-2">
+            <div>
+              <label class="block text-xs font-semibold mb-1">Alpha Vantage API Key</label>
+              <input id="alphaKey" type="password" placeholder="Optional" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+              <p class="text-xs text-zinc-500">Uses TIME_SERIES_DAILY_ADJUSTED. 5 calls/min free tier.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1">LLM Endpoint (optional)</label>
+              <input id="llmEndpoint" placeholder="https://api.openai.com/v1/chat/completions" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1">LLM API Key (optional)</label>
+              <input id="llmKey" type="password" placeholder="sk-..." class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div>
+              <label class="block text-xs font-semibold mb-1">Synthetic Mode</label>
+              <select id="syntheticMode" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+                <option value="auto" selected>Auto fallback</option>
+                <option value="force">Force synthetic</option>
+                <option value="off">Disable synthetic</option>
+              </select>
+              <p class="text-xs text-zinc-500">If real data fails, generate GBM series for demo/backtests.</p>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1">Trading Days/Year</label>
+              <input id="daysPerYear" type="number" value="252" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1">Risk-Free Rate (annual)</label>
+              <input id="rfr" type="number" step="0.0001" value="0.04" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+          </div>
+          <div class="space-y-2">
+            <div>
+              <label class="block text-xs font-semibold mb-1">Commission per Trade ($)</label>
+              <input id="commission" type="number" value="0" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+            <div>
+              <label class="block text-xs font-semibold mb-1">Slippage (bps)</label>
+              <input id="slippageBps" type="number" value="5" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" />
+            </div>
+            <div>
+              <span class="badge">Privacy: all runs in-browser.</span>
+            </div>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <!-- Summary KPIs -->
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div class="card p-4"><div class="text-xs text-zinc-500">Price</div><div id="kpiPrice" class="text-2xl font-bold">—</div><div id="kpiChange" class="text-xs">—</div></div>
+      <div class="card p-4"><div class="text-xs text-zinc-500">CAGR</div><div id="kpiCAGR" class="text-2xl font-bold">—</div><div class="text-xs">Buy & hold over selected range</div></div>
+      <div class="card p-4"><div class="text-xs text-zinc-500">Sharpe</div><div id="kpiSharpe" class="text-2xl font-bold">—</div><div class="text-xs">Excess return / vol</div></div>
+      <div class="card p-4"><div class="text-xs text-zinc-500">Max Drawdown</div><div id="kpiMDD" class="text-2xl font-bold">—</div><div class="text-xs">Peak-to-trough</div></div>
+    </section>
+
+    <!-- Charts -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div class="card p-4 lg:col-span-2">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-bold">Price + Indicators</h2>
+          <div class="flex gap-2 text-xs">
+            <label class="inline-flex items-center gap-1"><input id="chkSMA" type="checkbox" checked> SMA(50, 200)</label>
+            <label class="inline-flex items-center gap-1"><input id="chkBB" type="checkbox"> Bollinger(20,2)</label>
+            <label class="inline-flex items-center gap-1"><input id="chkEMA" type="checkbox"> EMA(21)</label>
+            <label class="inline-flex items-center gap-1"><input id="chkMACD" type="checkbox"> MACD</label>
+          </div>
+        </div>
+        <canvas id="priceChart" height="140"></canvas>
+      </div>
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-2"><h2 class="font-bold">RSI</h2>
+          <div class="text-xs">Period <input id="rsiPeriod" type="number" value="14" class="w-16 px-2 py-1 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900"></div>
+        </div>
+        <canvas id="rsiChart" height="140"></canvas>
+      </div>
+    </section>
+
+    <!-- Strategy & Backtest -->
+    <section class="card p-4">
+      <div class="flex items-center justify-between"><h2 class="font-bold">Strategies & Backtest</h2></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+        <div class="space-y-2">
+          <label class="block text-sm font-semibold">Strategy</label>
+          <select id="strategy" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900">
+            <option value="bh">Buy & Hold</option>
+            <option value="sma">SMA Crossover (50/200)</option>
+            <option value="rsi">RSI Mean Reversion (30/70)</option>
+            <option value="mom">12-1 Momentum</option>
+          </select>
+          <div id="strategyParams" class="text-xs text-zinc-500">Defaults shown; grid search below can optimize.</div>
+          <button id="btnRun" class="btn-primary w-full">Run Backtest</button>
+        </div>
+        <div class="space-y-2">
+          <label class="block text-sm font-semibold">Grid Search (optional)</label>
+          <div class="grid grid-cols-2 gap-2">
+            <input id="gridSMAfast" type="text" value="10,20,50" class="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="SMA fast list">
+            <input id="gridSMAslow" type="text" value="100,150,200" class="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="SMA slow list">
+            <input id="gridRSIbuy" type="text" value="25,30,35" class="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="RSI buy">
+            <input id="gridRSIsell" type="text" value="65,70,75" class="px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="RSI sell">
+          </div>
+          <button id="btnGrid" class="btn w-full">Optimize</button>
+        </div>
+        <div>
+          <canvas id="equityChart" height="160"></canvas>
+          <div id="btStats" class="text-xs mt-2 grid grid-cols-2 gap-x-3 gap-y-1"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Insights -->
+    <section class="card p-4">
+      <div class="flex items-center justify-between mb-2"><h2 class="font-bold">AI Insights</h2>
+        <div class="text-xs text-zinc-500">Optional LLM. Otherwise rule-based analysis runs locally.</div></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="md:col-span-2">
+          <textarea id="aiOutput" rows="8" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" placeholder="Insights will appear here"></textarea>
+        </div>
+        <div class="space-y-2">
+          <button id="btnExplain" class="btn w-full">Generate Rule-Based Insight</button>
+          <button id="btnLLM" class="btn w-full">Ask LLM</button>
+          <label class="block text-xs text-zinc-500">Prompt</label>
+          <input id="llmPrompt" class="w-full px-3 py-2 rounded-xl border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900" value="Given the stats and indicators, summarize risk and likely regimes." />
+        </div>
+      </div>
+    </section>
+
+    <!-- Disclaimers -->
+    <section class="card p-4">
+      <div class="text-xs text-zinc-500">
+        This tool is for education and research. No financial advice. Markets are risky. Use at your own risk.
+      </div>
+    </section>
+
+    <section class="print:block hidden text-xs text-zinc-500 p-2 text-center">
+      Report generated by NASDAQ Advisor.
+    </section>
+  </main>
+
+  <script>
+  // -------- Utility helpers --------
+  const $ = (id) => document.getElementById(id);
+
+  function parseCSV(text) {
+    const rows = text.trim().split(/\r?\n/).map(r=>r.split(','));
+    const header = rows.shift().map(s=>s.trim().toLowerCase());
+    const idx = {
+      date: header.indexOf('date'), open: header.indexOf('open'), high: header.indexOf('high'),
+      low: header.indexOf('low'), close: header.indexOf('close'), volume: header.indexOf('volume')
+    };
+    const data = rows.map(r => ({
+      date: new Date(r[idx.date]),
+      open: +r[idx.open], high: +r[idx.high], low: +r[idx.low], close: +r[idx.close], volume: +r[idx.volume]
+    })).sort((a,b)=>a.date-b.date);
+    return data;
+  }
+
+  function gbmSeries({start=100, mu=0.12, sigma=0.35, days=756}) {
+    const dt = 1/252; const out = []; let s = start;
+    for (let i=0;i<days;i++){ const z = gaussian(); s = s*Math.exp((mu-0.5*sigma*sigma)*dt + sigma*Math.sqrt(dt)*z);
+      out.push({date: addBizDays(new Date(), i-days), open:s, high:s*1.01, low:s*0.99, close:s, volume: Math.round(1e6*Math.random())}); }
+    return out;
+  }
+  function gaussian(){ let u=0, v=0; while(u===0)u=Math.random(); while(v===0)v=Math.random(); return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v) }
+  function addBizDays(d, n){ const t=new Date(d); t.setDate(t.getDate()+n); return t; }
+
+  function sliceRange(data, range){
+    if(range==='MAX') return data;
+    const map = { '1Y':252, '3Y':756, '5Y':1260 };
+    const n = map[range] || 756;
+    return data.slice(Math.max(0, data.length - n));
+  }
+
+  // Stats
+  function returnsFrom(data){
+    const rets = []; for(let i=1;i<data.length;i++){ rets.push((data[i].close/data[i-1].close)-1); } return rets;
+  }
+  function cagr(data, daysPerYear){
+    if(data.length<2) return 0; const start=data[0].close, end=data[data.length-1].close; const years = data.length/daysPerYear; return Math.pow(end/start,1/years)-1;
+  }
+  function sharpe(returns, rf=0, daysPerYear=252){
+    if(returns.length<2) return 0; const mean = returns.reduce((a,b)=>a+b,0)/returns.length; const ex = mean - rf/daysPerYear;
+    const sd = Math.sqrt(returns.reduce((a,b)=>a+(b-mean)**2,0)/(returns.length-1));
+    return sd===0?0: Math.sqrt(daysPerYear)*ex/sd;
+  }
+  function maxDrawdown(prices){
+    let peak=prices[0], mdd=0; for(const p of prices){ peak = Math.max(peak,p); mdd = Math.min(mdd, p/peak-1); } return mdd;
+  }
+
+  // Indicators
+  function SMA(arr, n){ const out=new Array(arr.length).fill(null); let s=0; for(let i=0;i<arr.length;i++){ s+=arr[i]; if(i>=n) s-=arr[i-n]; if(i>=n-1) out[i]=s/n; } return out; }
+  function EMA(arr, n){ const out=new Array(arr.length).fill(null); const k=2/(n+1); let prev=arr[0]; for(let i=0;i<arr.length;i++){ prev = i? (arr[i]*k + prev*(1-k)) : arr[0]; out[i]=prev; } return out; }
+  function RSI(arr, n=14){ const out=new Array(arr.length).fill(null); let gains=0, losses=0;
+    for(let i=1;i<arr.length;i++){ const ch = arr[i]-arr[i-1]; if(i<=n){ if(ch>0) gains+=ch; else losses-=ch; if(i===n){ const rs = gains/n / (losses/n || 1e-12); out[i]=100-100/(1+rs);} }
+      else { const up = Math.max(ch,0), dn = Math.max(-ch,0); gains = (gains*(n-1)+up)/n; losses = (losses*(n-1)+dn)/n; const rs = gains/(losses||1e-12); out[i]=100-100/(1+rs);} }
+    return out; }
+  function Bollinger(arr, n=20, k=2){ const ma=SMA(arr,n); const sd=new Array(arr.length).fill(null); for(let i=0;i<arr.length;i++){ if(i>=n-1){ const slice=arr.slice(i-n+1,i+1); const mean = ma[i]; const v = slice.reduce((a,b)=>a+(b-mean)**2,0)/slice.length; sd[i]=Math.sqrt(v); } }
+    return {mid:ma, upper:ma.map((m,i)=>m!=null?m+k*sd[i]:null), lower:ma.map((m,i)=>m!=null?m-k*sd[i]:null)}; }
+  function MACD(arr, fast=12, slow=26, signal=9){ const emaFast=EMA(arr,fast), emaSlow=EMA(arr,slow); const macd=emaFast.map((v,i)=>v-emaSlow[i]); const sig=EMA(macd.map(v=>v??0), signal); const hist=macd.map((v,i)=> (v!=null && sig[i]!=null)? v-sig[i] : null); return {macd, signal:sig, hist}; }
+
+  // Backtests
+  function backtestBuyHold({data, capital=10000, commission=0, slippageBps=0}){
+    const prices = data.map(d=>d.close);
+    const shares = Math.floor(capital / prices[0]);
+    let cash = capital - shares*prices[0] - commission;
+    const equity=[]; for(let i=0;i<prices.length;i++){ const slip = prices[i]*(slippageBps/10000); equity.push(cash + shares*(prices[i]-slip)); }
+    return { equity, trades: [{type:'buy', idx:0, price:prices[0]}], final: equity.at(-1) };
+  }
+  function backtestSMA({data, fast=50, slow=200, capital=10000, commission=0, slippageBps=0}){
+    const prices = data.map(d=>d.close); const f=SMA(prices, fast), s=SMA(prices, slow);
+    let pos=0, cash=capital, shares=0; const equity=[], trades=[];
+    for(let i=0;i<prices.length;i++){
+      const slip = prices[i]*(slippageBps/10000);
+      if(f[i]!=null && s[i]!=null){
+        if(f[i]>s[i] && pos===0){ // buy
+          shares = Math.floor(cash/(prices[i]+slip)); if(shares>0){ cash -= shares*(prices[i]+slip) + commission; pos=1; trades.push({type:'buy', idx:i, price:prices[i]}); }
+        } else if(f[i]<s[i] && pos===1){ // sell
+          cash += shares*(prices[i]-slip) - commission; shares=0; pos=0; trades.push({type:'sell', idx:i, price:prices[i]}); }
+      }
+      equity.push(cash + shares*(prices[i]-slip));
+    }
+    if(pos===1){ cash += shares*prices.at(-1); shares=0; }
+    return { equity, trades, final: equity.at(-1) };
+  }
+  function backtestRSI({data, buy=30, sell=70, capital=10000, commission=0, slippageBps=0, period=14}){
+    const prices=data.map(d=>d.close); const rsi=RSI(prices, period);
+    let pos=0, cash=capital, shares=0; const equity=[], trades=[];
+    for(let i=0;i<prices.length;i++){
+      const slip = prices[i]*(slippageBps/10000);
+      if(rsi[i]!=null){
+        if(rsi[i]<buy && pos===0){ shares = Math.floor(cash/(prices[i]+slip)); if(shares>0){ cash -= shares*(prices[i]+slip) + commission; pos=1; trades.push({type:'buy', idx:i, price:prices[i]}); } }
+        if(rsi[i]>sell && pos===1){ cash += shares*(prices[i]-slip) - commission; shares=0; pos=0; trades.push({type:'sell', idx:i, price:prices[i]}); }
+      }
+      equity.push(cash + shares*(prices[i]-slip));
+    }
+    if(pos===1){ cash += shares*prices.at(-1); shares=0; }
+    return { equity, trades, final: equity.at(-1) };
+  }
+  function backtestMomentum({data, lookback=252, skip=21, capital=10000, commission=0, slippageBps=0}){
+    const prices=data.map(d=>d.close); const equity=[], trades=[]; let cash=capital, shares=0, pos=0;
+    for(let i=0;i<prices.length;i++){
+      const slip = prices[i]*(slippageBps/10000);
+      if(i>lookback+skip){
+        const ret = prices[i-skip]/prices[i-lookback-skip]-1; // 12-1 momentum
+        if(ret>0 && pos===0){ shares = Math.floor(cash/(prices[i]+slip)); if(shares>0){ cash -= shares*(prices[i]+slip)+commission; pos=1; trades.push({type:'buy', idx:i, price:prices[i]}); }}
+        if(ret<=0 && pos===1){ cash += shares*(prices[i]-slip)-commission; shares=0; pos=0; trades.push({type:'sell', idx:i, price:prices[i]}); }
+      }
+      equity.push(cash + shares*(prices[i]-slip));
+    }
+    if(pos===1){ cash += shares*prices.at(-1); shares=0; }
+    return { equity, trades, final: equity.at(-1) };
+  }
+
+  // Charts
+  let priceChart, rsiChart, equityChart;
+  function renderCharts({data, overlays}){
+    const labels = data.map(d=>d.date.toISOString().slice(0,10));
+    const prices = data.map(d=>d.close);
+    const ctx1 = $('#priceChart');
+    const ctx2 = $('#rsiChart');
+    const ctx3 = $('#equityChart');
+
+    const ds = [{ label: 'Close', data: prices, borderWidth: 1.5, pointRadius: 0 }];
+    if(overlays.sma){ ds.push({label:'SMA 50', data:SMA(prices,50), borderWidth:1, pointRadius:0}, {label:'SMA 200', data:SMA(prices,200), borderWidth:1, pointRadius:0}); }
+    if(overlays.ema){ ds.push({label:'EMA 21', data:EMA(prices,21), borderWidth:1, pointRadius:0}); }
+    if(overlays.bb){ const bb=Bollinger(prices,20,2); ds.push({label:'BB Upper', data:bb.upper, borderWidth:1, pointRadius:0}, {label:'BB Mid', data:bb.mid, borderWidth:1, pointRadius:0}, {label:'BB Lower', data:bb.lower, borderWidth:1, pointRadius:0}); }
+    if(overlays.macd){ /* MACD plotted on RSI chart below as separate chart not overlaying price */ }
+
+    if(priceChart) priceChart.destroy();
+    priceChart = new Chart(ctx1, { type:'line', data:{ labels, datasets: ds }, options:{ animation:false, responsive:true, scales:{ x:{ display:false } }, plugins:{ legend:{ display:true } } } });
+
+    const rsi = RSI(prices, parseInt($('#rsiPeriod').value||'14'));
+    if(rsiChart) rsiChart.destroy();
+    rsiChart = new Chart(ctx2, { type:'line', data:{ labels, datasets:[{label:'RSI', data:rsi, pointRadius:0, borderWidth:1.2}]}, options:{ animation:false, responsive:true, scales:{ y:{ suggestedMin:0, suggestedMax:100 } }, plugins:{ legend:{display:true}, annotation:{} } });
+  }
+
+  function renderEquity({labels, equity}){
+    if(equityChart) equityChart.destroy();
+    equityChart = new Chart($('#equityChart'), { type:'line', data:{ labels, datasets:[{ label:'Equity', data: equity, pointRadius:0, borderWidth:1.5 }]}, options:{ animation:false, responsive:true, scales:{ x:{display:false} } } });
+  }
+
+  // Adapters
+  async function fetchAlphaDaily(ticker, key){
+    const url = `https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol=${encodeURIComponent(ticker)}&outputsize=full&apikey=${encodeURIComponent(key)}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Alpha Vantage error');
+    const js = await res.json();
+    const series = js['Time Series (Daily)'];
+    if(!series) throw new Error('Alpha data missing');
+    const arr = Object.entries(series).map(([d, v])=>({
+      date: new Date(d),
+      open: +v['1. open'], high: +v['2. high'], low: +v['3. low'], close: +v['5. adjusted close'], volume: +v['6. volume']
+    })).sort((a,b)=>a.date-b.date);
+    return arr;
+  }
+
+  // Generic fetch with graceful fallback
+  async function getData(ticker){
+    const range = $('#range').value;
+    const mode = $('#syntheticMode').value;
+    const key = $('#alphaKey').value.trim();
+    let data = [];
+    try {
+      if(mode !== 'force'){
+        if(key){ data = await fetchAlphaDaily(ticker, key); }
+        // Additional adapters can be added here.
+      }
+    } catch(e) { console.warn(e); }
+    if((!data || data.length===0) && mode!=='off'){
+      console.warn('Falling back to synthetic GBM data');
+      data = gbmSeries({ start: 100 + Math.random()*100, days: 1260 });
+    }
+    return sliceRange(data, range);
+  }
+
+  // KPI update
+  function setKPI({data}){
+    if(!data || data.length<2){ $('#kpiPrice').textContent='—'; $('#kpiChange').textContent='—'; return; }
+    const p0 = data[0].close, p1 = data.at(-1).close;
+    const ch = (p1/p0 - 1);
+    $('#kpiPrice').textContent = `$${p1.toFixed(2)}`;
+    $('#kpiChange').textContent = `${(ch*100).toFixed(2)}% over range`;
+
+    const r = returnsFrom(data);
+    const c = cagr(data, +$('#daysPerYear').value);
+    const s = sharpe(r, +$('#rfr').value, +$('#daysPerYear').value);
+    const m = maxDrawdown(data.map(d=>d.close));
+    $('#kpiCAGR').textContent = `${(c*100).toFixed(2)}%`;
+    $('#kpiSharpe').textContent = s.toFixed(2);
+    $('#kpiMDD').textContent = `${(m*100).toFixed(2)}%`;
+  }
+
+  // Backtest runner
+  function runBacktest(data){
+    const strategy = $('#strategy').value;
+    const capital = +$('#capital').value || 10000;
+    const commission = +$('#commission').value || 0;
+    const slippageBps = +$('#slippageBps').value || 0;
+    let res;
+    if(strategy==='bh') res = backtestBuyHold({data, capital, commission, slippageBps});
+    if(strategy==='sma') res = backtestSMA({data, capital, commission, slippageBps, fast:50, slow:200});
+    if(strategy==='rsi') res = backtestRSI({data, capital, commission, slippageBps, buy:30, sell:70});
+    if(strategy==='mom') res = backtestMomentum({data, capital, commission, slippageBps});
+
+    const labels = data.map(d=>d.date.toISOString().slice(0,10));
+    renderEquity({labels, equity: res.equity});
+
+    const start = capital;
+    const end = res.final;
+    const ret = end/start - 1;
+    const eqRets = []; for(let i=1;i<res.equity.length;i++){ eqRets.push(res.equity[i]/res.equity[i-1]-1); }
+    const s = sharpe(eqRets, +$('#rfr').value, +$('#daysPerYear').value);
+    const m = maxDrawdown(res.equity);
+
+    const stats = {
+      'Start Capital': `$${start.toFixed(2)}`,
+      'End Capital': `$${end.toFixed(2)}`,
+      'Total Return': `${(ret*100).toFixed(2)}%`,
+      'Sharpe': s.toFixed(2),
+      'Max Drawdown': `${(m*100).toFixed(2)}%`,
+      'Trades': String(res.trades.length)
+    };
+    const el = $('#btStats'); el.innerHTML='';
+    for(const [k,v] of Object.entries(stats)){
+      const dv = document.createElement('div'); dv.className='flex justify-between'; dv.innerHTML = `<span class="text-zinc-500">${k}</span><span class="font-semibold">${v}</span>`; el.appendChild(dv);
+    }
+    return res;
+  }
+
+  // Grid search
+  function parseList(s){ return s.split(',').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x)); }
+  function gridSearch(data){
+    const capital = +$('#capital').value || 10000;
+    const commission = +$('#commission').value || 0;
+    const slippageBps = +$('#slippageBps').value || 0;
+    const fList = parseList($('#gridSMAfast').value);
+    const sList = parseList($('#gridSMAslow').value);
+    const bList = parseList($('#gridRSIbuy').value);
+    const xList = parseList($('#gridRSIsell').value);
+    const results = [];
+    for(const f of fList){ for(const s of sList){ if(f>=s) continue; const r = backtestSMA({data, fast:f, slow:s, capital, commission, slippageBps}); results.push({type:'sma', f, s, end:r.final}); } }
+    for(const b of bList){ for(const x of xList){ if(b>=x){ const r = backtestRSI({data, buy:b, sell:x, capital, commission, slippageBps}); results.push({type:'rsi', b, x, end:r.final}); } } }
+    results.sort((a,b)=>b.end-a.end);
+    const top = results.slice(0,6);
+    const lines = top.map(r=> r.type==='sma' ? `SMA ${r.f}/${r.s} → $${r.end.toFixed(0)}` : `RSI ${r.b}/${r.x} → $${r.end.toFixed(0)}`).join('\n');
+    return lines;
+  }
+
+  // Rule-based AI insight
+  function ruleInsight({ticker, data}){
+    if(!data || data.length<20) return 'Insufficient data.';
+    const prices = data.map(d=>d.close);
+    const rsi = RSI(prices, 14);
+    const r = returnsFrom(data);
+    const s = sharpe(r, +$('#rfr').value, +$('#daysPerYear').value);
+    const mdd = maxDrawdown(prices);
+    const bb = Bollinger(prices, 20, 2);
+    const last = prices.length-1;
+    const posVsBB = bb.upper[last] && bb.lower[last] ? (prices[last]-bb.lower[last])/(bb.upper[last]-bb.lower[last]) : 0.5;
+    const regime = s>1 && mdd>-0.2 ? 'uptrend' : s<0 && mdd<-0.3 ? 'stress' : 'range';
+    const rsiVal = rsi[last]||50;
+    let action = 'hold';
+    if(regime==='uptrend' && rsiVal<40 && posVsBB<0.3) action='buy-dip';
+    else if(regime==='range' && rsiVal<30) action='mean-revert long';
+    else if(regime==='stress' && rsiVal>60) action='avoid / reduce';
+    return [
+      `Ticker ${ticker}: regime = ${regime}.`,
+      `Sharpe=${s.toFixed(2)}, MaxDD=${(mdd*100).toFixed(1)}%, RSI=${rsiVal.toFixed(1)}.`,
+      `Price vs BB position=${(posVsBB*100).toFixed(0)}%.`,
+      `Heuristic action: ${action}.`,
+      `Note: not advice. Validate with backtests and risk budget.`
+    ].join('\n');
+  }
+
+  async function callLLM({endpoint, key, prompt, context}){
+    try{
+      const body = {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role:'system', content:'You are a cautious quantitative analyst. Be concise.' },
+          { role:'user', content: prompt + "\n\nContext:\n" + context }
+        ],
+        temperature: 0.2
+      };
+      const res = await fetch(endpoint, {
+        method:'POST',
+        headers: { 'Content-Type':'application/json', 'Authorization': `Bearer ${key}` },
+        body: JSON.stringify(body)
+      });
+      if(!res.ok) throw new Error('LLM HTTP error');
+      const js = await res.json();
+      // OpenAI-compatible shape
+      const text = js.choices?.[0]?.message?.content || JSON.stringify(js).slice(0,2000);
+      return text;
+    } catch(e){ return `LLM error: ${e.message}`; }
+  }
+
+  // Persistence
+  function saveSettings(){
+    const keys=['ticker','range','capital','alphaKey','syntheticMode','daysPerYear','rfr','commission','slippageBps','llmEndpoint','llmKey'];
+    const obj={}; keys.forEach(k=>obj[k]=$(k).value);
+    localStorage.setItem('nasdaqAdvisorSettings', JSON.stringify(obj));
+    alert('Saved');
+  }
+  function loadSettings(){
+    const s = localStorage.getItem('nasdaqAdvisorSettings'); if(!s) return alert('Nothing saved');
+    const obj = JSON.parse(s); for(const [k,v] of Object.entries(obj)){ if($(k)) $(k).value = v; }
+    alert('Loaded');
+  }
+
+  // Export
+  function exportReport(){ window.print(); }
+
+  // Wiring
+  let currentData = [];
+  async function analyze(){
+    const ticker = $('#ticker').value.trim().toUpperCase();
+    const data = await getData(ticker);
+    currentData = data;
+    setKPI({data});
+    renderCharts({data, overlays:{
+      sma: $('#chkSMA').checked,
+      bb: $('#chkBB').checked,
+      ema: $('#chkEMA').checked,
+      macd: $('#chkMACD').checked,
+    }});
+  }
+
+  $('#btnFetch').addEventListener('click', analyze);
+  $('#btnRun').addEventListener('click', ()=>{ if(currentData.length) runBacktest(currentData); });
+  $('#btnGrid').addEventListener('click', ()=>{ if(currentData.length) { const lines=gridSearch(currentData); $('#aiOutput').value = `Grid Search Top Results\n${lines}`; } });
+  $('#btnExplain').addEventListener('click', ()=>{ if(currentData.length) $('#aiOutput').value = ruleInsight({ticker: $('#ticker').value, data: currentData}); });
+  $('#btnLLM').addEventListener('click', async ()=>{
+    const endpoint = $('#llmEndpoint').value.trim(); const key = $('#llmKey').value.trim(); const prompt = $('#llmPrompt').value.trim();
+    if(!endpoint || !key) { $('#aiOutput').value = 'Provide LLM endpoint and key.'; return; }
+    const ctx = JSON.stringify({ kpis:{ cagr: $('#kpiCAGR').textContent, sharpe: $('#kpiSharpe').textContent, mdd: $('#kpiMDD').textContent }, strategy: $('#strategy').value }).slice(0,5000);
+    const text = await callLLM({endpoint, key, prompt, context: ctx});
+    $('#aiOutput').value = text;
+  });
+  $('#btnSave').addEventListener('click', saveSettings);
+  $('#btnLoad').addEventListener('click', loadSettings);
+  $('#btnReport').addEventListener('click', exportReport);
+  $('#csvFile').addEventListener('change', async (e)=>{
+    const f = e.target.files?.[0]; if(!f) return; const txt = await f.text(); const d = parseCSV(txt); currentData = sliceRange(d, $('#range').value); setKPI({data:currentData}); renderCharts({data:currentData, overlays:{ sma:$('#chkSMA').checked, bb:$('#chkBB').checked, ema:$('#chkEMA').checked, macd:$('#chkMACD').checked }});
+  });
+  $('#chkSMA').addEventListener('change', ()=>{ if(currentData.length) renderCharts({data:currentData, overlays:{ sma:$('#chkSMA').checked, bb:$('#chkBB').checked, ema:$('#chkEMA').checked, macd:$('#chkMACD').checked }}); });
+  $('#chkBB').addEventListener('change', ()=>{ if(currentData.length) renderCharts({data:currentData, overlays:{ sma:$('#chkSMA').checked, bb:$('#chkBB').checked, ema:$('#chkEMA').checked, macd:$('#chkMACD').checked }}); });
+  $('#chkEMA').addEventListener('change', ()=>{ if(currentData.length) renderCharts({data:currentData, overlays:{ sma:$('#chkSMA').checked, bb:$('#chkBB').checked, ema:$('#chkEMA').checked, macd:$('#chkMACD').checked }}); });
+  $('#chkMACD').addEventListener('change', ()=>{ if(currentData.length) renderCharts({data:currentData, overlays:{ sma:$('#chkSMA').checked, bb:$('#chkBB').checked, ema:$('#chkEMA').checked, macd:$('#chkMACD').checked }}); });
+
+  // Auto-run on load
+  analyze();
+  </script>
+</body>
+</html>
